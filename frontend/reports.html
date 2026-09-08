@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Reports — Shop Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/css/style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="reports">
+
+<div id="sidebar"></div>
+<div id="topbar"></div>
+
+<div id="page-content">
+
+  <div class="page-header">
+    <div>
+      <h1>Reports</h1>
+      <p>Revenue, payment methods and stock health for a date range.</p>
+    </div>
+  </div>
+
+  <div class="card-panel mb-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small">From</label>
+        <input id="from" type="date" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">To</label>
+        <input id="to" type="date" class="form-control">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" onclick="loadReport()">Run Report</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="stat-card">
+        <div class="stat-label">Total Revenue</div>
+        <div class="stat-value" id="repRevenue">—</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="stat-card">
+        <div class="stat-label">Total Sales</div>
+        <div class="stat-value" id="repCount">—</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="stat-card">
+        <div class="stat-label">Average Sale Value</div>
+        <div class="stat-value" id="repAvg">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-7">
+      <div class="card-panel">
+        <h6 class="mb-3">Sales by Payment Method</h6>
+        <canvas id="paymentChart" height="150"></canvas>
+      </div>
+    </div>
+    <div class="col-md-5">
+      <div class="card-panel">
+        <h6 class="mb-3">Low Stock Products</h6>
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Product</th><th>Stock</th><th>Threshold</th></tr></thead>
+          <tbody id="lowStockBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+let paymentChart;
+
+async function loadReport() {
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+
+  // Pull enough sales to summarize client-side (fine for a small/medium shop;
+  // move to a dedicated backend aggregate query if the dataset grows large)
+  const res = await getSales({ from, to, page: 1, limit: 100 });
+  const sales = res.data || [];
+
+  const revenue = sales.reduce((sum, s) => sum + Number(s.total), 0);
+  document.getElementById("repRevenue").innerText = money(revenue);
+  document.getElementById("repCount").innerText = res.total;
+  document.getElementById("repAvg").innerText = money(sales.length ? revenue / sales.length : 0);
+
+  const byMethod = {};
+  sales.forEach(s => { byMethod[s.payment_method] = (byMethod[s.payment_method] || 0) + Number(s.total); });
+
+  if (paymentChart) paymentChart.destroy();
+  paymentChart = new Chart(document.getElementById("paymentChart"), {
+    type: "doughnut",
+    data: {
+      labels: Object.keys(byMethod),
+      datasets: [{ data: Object.values(byMethod), backgroundColor: ["#4f46e5", "#22c55e", "#f59e0b"] }]
+    }
+  });
+}
+
+async function loadLowStock() {
+  const products = await getLowStockProducts();
+  document.getElementById("lowStockBody").innerHTML = products.length
+    ? products.map(p => `<tr><td>${p.name}</td><td class="text-danger fw-semibold">${p.stock}</td><td>${p.low_stock_threshold}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="text-muted">Nothing low on stock 🎉</td></tr>`;
+}
+
+loadReport();
+loadLowStock();
+</script>
+
+</body>
+</html>

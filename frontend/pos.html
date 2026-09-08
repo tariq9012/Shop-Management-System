@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>New Sale — Shop Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/css/style.css" rel="stylesheet">
+</head>
+<body data-page="pos">
+
+<div id="sidebar"></div>
+<div id="topbar"></div>
+
+<div id="page-content">
+  <div class="page-header">
+    <div>
+      <h1>New Sale</h1>
+      <p>Search products, build the cart, and check out.</p>
+    </div>
+  </div>
+  <div class="card-panel mb-3">
+    <label class="form-label small mb-1">📷 Scan Barcode</label>
+    <input id="barcodeInput" class="form-control form-control-lg" placeholder="Click here, then scan a product..." autocomplete="off">
+  </div>
+
+  <div class="row g-3">
+
+    <!-- Product picker -->
+    <div class="col-md-7">
+      <div class="card-panel">
+        <input id="productSearch" class="form-control mb-3" placeholder="Search products by name, SKU or barcode...">
+        <div class="table-responsive" style="max-height: 60vh; overflow-y:auto;">
+          <table class="table table-sm align-middle">
+            <thead><tr><th></th><th>Name</th><th>Price</th><th>Stock</th><th></th></tr></thead>
+            <tbody id="productList"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cart -->
+    <div class="col-md-5">
+      <div class="card-panel">
+        <h6 class="mb-2">Cart</h6>
+        <div id="cartItems"></div>
+        <p id="emptyCartMsg" class="text-muted small">No items in cart yet</p>
+
+        <hr>
+        <div class="mb-2">
+          <label class="form-label small">Customer (optional)</label>
+          <select id="customer_id" class="form-select"></select>
+        </div>
+        <div class="row">
+          <div class="col mb-2">
+            <label class="form-label small">Discount (flat)</label>
+            <input id="discount" type="number" step="0.01" value="0" class="form-control" onchange="renderTotals()">
+          </div>
+          <div class="col mb-2">
+            <label class="form-label small">Tax %</label>
+            <input id="tax_rate" type="number" step="0.01" value="0" class="form-control" onchange="renderTotals()">
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Payment Method</label>
+          <select id="payment_method" class="form-select">
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+            <option value="online">Online</option>
+          </select>
+        </div>
+
+        <div class="d-flex justify-content-between small text-muted"><span>Subtotal</span><span id="subtotalOut">Rs 0.00</span></div>
+        <div class="d-flex justify-content-between small text-muted"><span>Tax</span><span id="taxOut">Rs 0.00</span></div>
+        <div class="d-flex justify-content-between small text-muted"><span>Discount</span><span id="discountOut">- Rs 0.00</span></div>
+        <div class="d-flex justify-content-between fw-bold fs-5 mt-1"><span>Total</span><span id="totalOut">Rs 0.00</span></div>
+
+        <button class="btn btn-primary w-100 mt-3" onclick="checkout()">Complete Sale</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Invoice modal -->
+<div class="modal fade" id="invoiceModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">✅ Sale Recorded</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="invoiceBody"></div>
+      <div class="modal-footer">
+        <a href="sales-history.html" class="btn btn-outline-secondary">View Sales History</a>
+        <button class="btn btn-primary" data-bs-dismiss="modal" onclick="location.reload()">New Sale</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+let allProducts = [];
+let cart = {}; // product_id -> { product, quantity }
+let invoiceModal;
+
+async function loadProducts() {
+  const res = await getProducts({ limit: 100 });
+  allProducts = res.data || [];
+  renderProductList();
+}
+
+function renderProductList() {
+  const term = document.getElementById("productSearch").value.toLowerCase();
+  const filtered = allProducts.filter(p =>
+    p.name.toLowerCase().includes(term) || (p.sku || "").toLowerCase().includes(term) || (p.barcode || "").toLowerCase().includes(term)
+  );
+  document.getElementById("productList").innerHTML = filtered.length ? filtered.map(p => `
+    <tr>
+      <td>${p.image ? `<img src="http://localhost:5000${p.image}" class="product-thumb">` : `<div class="product-thumb"></div>`}</td>
+      <td>${p.name}</td>
+      <td>${money(p.price)}</td>
+      <td>${p.stock}</td>
+      <td><button class="btn btn-sm btn-primary" ${p.stock < 1 ? "disabled" : ""} onclick="addToCart(${p.id})">Add</button></td>
+    </tr>`).join("") : emptyStateRow(5, "No products match your search", "🔍");
+}
+
+function addToCart(id) {
+  const product = allProducts.find(p => p.id === id);
+  if (!product) return;
+  const existing = cart[id];
+  const qty = existing ? existing.quantity + 1 : 1;
+  if (qty > product.stock) { toast("Not enough stock", "danger"); return; }
+  cart[id] = { product, quantity: qty };
+  renderCart();
+}
+
+function updateQty(id, qty) {
+  qty = parseInt(qty);
+  if (!qty || qty < 1) { delete cart[id]; renderCart(); return; }
+  const product = cart[id].product;
+  if (qty > product.stock) { toast("Not enough stock", "danger"); qty = product.stock; }
+  cart[id].quantity = qty;
+  renderCart();
+}
+
+function removeFromCart(id) {
+  delete cart[id];
+  renderCart();
+}
+
+function renderCart() {
+  const entries = Object.values(cart);
+  document.getElementById("emptyCartMsg").style.display = entries.length ? "none" : "block";
+  document.getElementById("cartItems").innerHTML = entries.map(({ product, quantity }) => `
+    <div class="pos-cart-item">
+      <div>
+        <div class="fw-semibold">${product.name}</div>
+        <div class="small text-muted">${money(product.price)} each</div>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <input type="number" min="1" value="${quantity}" class="form-control form-control-sm" style="width:64px"
+               onchange="updateQty(${product.id}, this.value)">
+        <button class="btn btn-sm btn-outline-danger" onclick="removeFromCart(${product.id})">✕</button>
+      </div>
+    </div>`).join("");
+  renderTotals();
+}
+
+function renderTotals() {
+  const entries = Object.values(cart);
+  const subtotal = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
+  const discount = Number(document.getElementById("discount").value) || 0;
+  const taxRate = Number(document.getElementById("tax_rate").value) || 0;
+  const tax = (subtotal * taxRate) / 100;
+  const total = subtotal - discount + tax;
+
+  document.getElementById("subtotalOut").innerText = money(subtotal);
+  document.getElementById("taxOut").innerText = money(tax);
+  document.getElementById("discountOut").innerText = `- ${money(discount)}`;
+  document.getElementById("totalOut").innerText = money(total);
+}
+
+async function loadCustomers() {
+  const res = await getCustomers({ limit: 100 });
+  const customers = res.data || [];
+  document.getElementById("customer_id").innerHTML =
+    `<option value="">Walk-in customer</option>` + customers.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+}
+
+async function checkout() {
+  const entries = Object.values(cart);
+  if (entries.length === 0) { toast("Cart is empty", "danger"); return; }
+
+  const payload = {
+    customer_id: document.getElementById("customer_id").value || null,
+    items: entries.map(({ product, quantity }) => ({ product_id: product.id, quantity })),
+    discount: Number(document.getElementById("discount").value) || 0,
+    tax_rate: Number(document.getElementById("tax_rate").value) || 0,
+    payment_method: document.getElementById("payment_method").value
+  };
+
+  const res = await addSale(payload);
+  if (res.invoice_no) {
+    document.getElementById("invoiceBody").innerHTML = `
+      <p class="mb-1"><strong>Invoice:</strong> ${res.invoice_no}</p>
+      <p class="mb-1"><strong>Subtotal:</strong> ${money(res.subtotal)}</p>
+      <p class="mb-1"><strong>Tax:</strong> ${money(res.tax)}</p>
+      <p class="mb-1"><strong>Discount:</strong> ${money(res.discount)}</p>
+      <p class="fs-5 fw-bold"><strong>Total:</strong> ${money(res.total)}</p>
+    `;
+    cart = {};
+    invoiceModal.show();
+  } else {
+    toast(res.msg || "Could not complete sale", "danger");
+  }
+}
+
+document.getElementById("productSearch").addEventListener("input", renderProductList);
+
+// ---------- Barcode scanner ----------
+// Scanners act like a keyboard: they type the code fast and send Enter.
+const barcodeInput = document.getElementById("barcodeInput");
+
+barcodeInput.addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+
+  const code = barcodeInput.value.trim();
+  barcodeInput.value = "";
+  if (!code) return;
+
+  // Prefer an already-loaded product (instant, no request) and fall back
+  // to the server for anything not in the current page of products.
+  let product = allProducts.find(p => p.barcode === code || p.sku === code);
+  if (!product) {
+    const res = await getProductByBarcode(code);
+    if (res.msg) {
+      toast(res.msg, "danger");
+      barcodeInput.focus();
+      return;
+    }
+    product = res;
+    allProducts.push(product); // so quantity/stock checks work immediately
+  }
+
+  if (product.stock < 1) {
+    toast(`${product.name} is out of stock`, "danger");
+  } else {
+    addToCart(product.id);
+    toast(`Added ${product.name}`);
+  }
+  barcodeInput.focus();
+});
+
+async function loadDefaultTaxRate() {
+  try {
+    const settings = await getSettings();
+    if (settings.default_tax_rate) {
+      document.getElementById("tax_rate").value = settings.default_tax_rate;
+      renderTotals();
+    }
+  } catch {
+    // fine to skip — 0% stays as the fallback
+  }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  invoiceModal = new bootstrap.Modal(document.getElementById("invoiceModal"));
+  await Promise.all([loadProducts(), loadCustomers(), loadDefaultTaxRate()]);
+  barcodeInput.focus();
+});
+</script>
+
+</body>
+</html>

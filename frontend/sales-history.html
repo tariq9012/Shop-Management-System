@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sales History — Shop Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/css/style.css" rel="stylesheet">
+</head>
+<body data-page="sales-history">
+
+<div id="sidebar"></div>
+<div id="topbar"></div>
+
+<div id="page-content">
+
+  <div class="page-header">
+    <div>
+      <h1>Sales History</h1>
+      <p>Every completed sale, with invoices and returns.</p>
+    </div>
+    <div>
+      <button class="btn btn-outline-secondary btn-sm" onclick="exportSales()">⬇ Export CSV</button>
+      <a href="pos.html" class="btn btn-primary btn-sm">+ New Sale</a>
+    </div>
+  </div>
+
+  <div class="card-panel mb-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small">From</label>
+        <input id="from" type="date" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">To</label>
+        <input id="to" type="date" class="form-control">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" onclick="currentPage=1; load();">Filter</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <table class="table align-middle">
+      <thead><tr><th>Invoice</th><th>Customer</th><th>Cashier</th><th>Total</th><th>Payment</th><th>Date</th><th></th></tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+    <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+  </div>
+</div>
+
+<!-- Invoice detail modal -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="detailTitle">Invoice</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <table class="table table-sm" id="itemsTable">
+          <thead><tr><th></th><th>Product</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr></thead>
+          <tbody id="detailItems"></tbody>
+        </table>
+        <div id="detailTotals" class="text-end mb-3"></div>
+        <div id="refundHistory"></div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <button class="btn btn-outline-danger btn-sm" id="refundBtn" onclick="openRefund()">↩ Refund / Return</button>
+        <a class="btn btn-outline-secondary btn-sm" id="printLink" target="_blank">🖨️ Print Invoice</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Refund modal -->
+<div class="modal fade" id="refundModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Refund Items</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">Set the quantity being returned for each item (0 = not returned).</p>
+        <div id="refundItemsForm"></div>
+        <div class="mb-2 mt-3">
+          <label class="form-label small">Reason (optional)</label>
+          <input id="refundReason" class="form-control" placeholder="e.g. Customer changed their mind">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger" onclick="submitRefund()">Confirm Refund</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+let currentPage = 1;
+let detailModal, refundModal;
+let currentSale = null;
+
+async function load() {
+  showSkeleton("list", 7);
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+  const res = await getSales({ from, to, page: currentPage, limit: 10 });
+
+  const list = document.getElementById("list");
+  list.innerHTML = res.data.length ? res.data.map(s => `
+    <tr>
+      <td>${s.invoice_no}</td>
+      <td>${s.customer || "Walk-in"}</td>
+      <td>${s.cashier || ""}</td>
+      <td>${money(s.total)} ${s.refunded_total > 0 ? '<span class="badge bg-danger-subtle text-danger">refunded</span>' : ''}</td>
+      <td><span class="badge bg-light text-dark">${s.payment_method}</span></td>
+      <td>${new Date(s.created_at).toLocaleString()}</td>
+      <td><button class="btn btn-sm btn-outline-secondary" onclick="viewDetail(${s.id})">View</button></td>
+    </tr>`).join("") : emptyStateRow(7, "No sales found for this range", "🧾");
+
+  renderPagination(res.page, res.pages);
+}
+
+function renderPagination(page, pages) {
+  const el = document.getElementById("pagination");
+  if (pages <= 1) { el.innerHTML = ""; return; }
+  let html = "";
+  for (let i = 1; i <= pages; i++) {
+    html += `<li class="page-item ${i === page ? "active" : ""}"><a class="page-link" href="#" onclick="currentPage=${i}; load(); return false;">${i}</a></li>`;
+  }
+  el.innerHTML = html;
+}
+
+async function viewDetail(id) {
+  const sale = await getSale(id);
+  currentSale = sale;
+
+  document.getElementById("detailTitle").innerText = `Invoice ${sale.invoice_no}`;
+  document.getElementById("detailItems").innerHTML = sale.items.map(i => `
+    <tr><td></td><td>${i.product_name}</td><td>${i.quantity}</td><td>${money(i.price)}</td><td>${money(i.subtotal)}</td></tr>
+  `).join("");
+  document.getElementById("detailTotals").innerHTML = `
+    <div>Subtotal: ${money(sale.subtotal)}</div>
+    <div>Tax: ${money(sale.tax)}</div>
+    <div>Discount: -${money(sale.discount)}</div>
+    <div class="fw-bold fs-5">Total: ${money(sale.total)}</div>
+    ${sale.refunded_total > 0 ? `<div class="text-danger">Refunded: -${money(sale.refunded_total)}</div>` : ''}
+  `;
+  document.getElementById("refundHistory").innerHTML = sale.refunds.length
+    ? `<div class="small text-muted">${sale.refunds.map(r => `Refund of ${money(r.total)} by ${r.refunded_by || 'system'} on ${new Date(r.created_at).toLocaleDateString()}${r.reason ? ' — ' + r.reason : ''}`).join('<br>')}</div>`
+    : "";
+  document.getElementById("printLink").href = `invoice.html?id=${sale.id}`;
+
+  const fullyRefunded = sale.items.every(i => sale.refunded_total >= sale.total);
+  document.getElementById("refundBtn").disabled = fullyRefunded;
+
+  detailModal.show();
+}
+
+function openRefund() {
+  if (!currentSale) return;
+  document.getElementById("refundItemsForm").innerHTML = currentSale.items.map(i => `
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div>${i.product_name} <span class="text-muted small">(sold: ${i.quantity})</span></div>
+      <input type="number" min="0" max="${i.quantity}" value="0" class="form-control form-control-sm" style="width:70px" data-item-id="${i.id}">
+    </div>
+  `).join("");
+  detailModal.hide();
+  refundModal.show();
+}
+
+async function submitRefund() {
+  const inputs = document.querySelectorAll("#refundItemsForm input");
+  const items = Array.from(inputs)
+    .map(inp => ({ sale_item_id: parseInt(inp.dataset.itemId), quantity: parseInt(inp.value) || 0 }))
+    .filter(i => i.quantity > 0);
+
+  if (items.length === 0) { toast("Enter a quantity to refund", "danger"); return; }
+
+  const res = await refundSale(currentSale.id, { items, reason: document.getElementById("refundReason").value });
+  if (res.msg === "Refund recorded") {
+    toast(`Refunded ${money(res.refund_total)}`);
+    refundModal.hide();
+    load();
+  } else {
+    toast(res.msg || "Could not process refund", "danger");
+  }
+}
+
+async function exportSales() {
+  const res = await getSales({ limit: 100 });
+  exportCSV("sales.csv", res.data.map(s => ({
+    invoice: s.invoice_no,
+    customer: s.customer || "Walk-in",
+    cashier: s.cashier || "",
+    total: s.total,
+    refunded: s.refunded_total,
+    payment_method: s.payment_method,
+    date: s.created_at
+  })));
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  detailModal = new bootstrap.Modal(document.getElementById("detailModal"));
+  refundModal = new bootstrap.Modal(document.getElementById("refundModal"));
+  load();
+});
+</script>
+
+</body>
+</html>

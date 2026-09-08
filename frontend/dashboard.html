@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard — Shop Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/css/style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="dashboard">
+
+<div id="sidebar"></div>
+<div id="topbar"></div>
+
+<div id="page-content">
+
+  <div class="page-header">
+    <div>
+      <h1 id="greeting">Welcome back</h1>
+      <p>Here's how the shop is doing.</p>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="stat-card">
+        <div class="stat-label">Today's Revenue</div>
+        <div class="stat-value" id="statTodayRevenue">—</div>
+        <div class="text-muted small" id="statTodayCount"></div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-card">
+        <div class="stat-label">This Month</div>
+        <div class="stat-value" id="statMonthRevenue">—</div>
+        <div class="text-muted small" id="statMonthCount"></div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-card">
+        <div class="stat-label">Products / Customers</div>
+        <div class="stat-value" id="statProductsCustomers">—</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-card">
+        <div class="stat-label">Low Stock Alerts</div>
+        <div class="stat-value text-danger" id="statLowStock">—</div>
+        <a href="products.html" class="small">View products →</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-8">
+      <div class="card-panel">
+        <h6 class="mb-3">Revenue — last 7 days</h6>
+        <canvas id="revenueChart" height="90"></canvas>
+      </div>
+
+      <div class="card-panel mt-3">
+        <h6 class="mb-3">Recent Sales</h6>
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Date</th></tr></thead>
+          <tbody id="recentSalesBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card-panel">
+        <h6 class="mb-3">Top Products</h6>
+        <canvas id="topProductsChart" height="200"></canvas>
+      </div>
+
+      <div class="card-panel mt-3">
+        <h6 class="mb-3">Recent Activity</h6>
+        <div id="activityFeed" class="small"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+const ACTIVITY_LABELS = {
+  user_login: "logged in",
+  user_registered: "created an account",
+  product_added: "added product",
+  product_deleted: "deleted product",
+  sale_created: "made a sale",
+  sale_refunded: "processed a refund",
+  po_created: "created a purchase order",
+  po_received: "received a purchase order",
+  user_role_changed: "changed a user's role",
+  user_status_changed: "changed a user's status",
+  user_deleted: "deleted a user",
+  settings_updated: "updated shop settings"
+};
+
+async function loadDashboard() {
+  const user = currentUser();
+  document.getElementById("greeting").innerText = user ? `Welcome back, ${user.username}` : "Welcome back";
+
+  const stats = await getDashboardStats();
+
+  document.getElementById("statTodayRevenue").innerText = money(stats.today.revenue);
+  document.getElementById("statTodayCount").innerText = `${stats.today.count} sale(s)`;
+  document.getElementById("statMonthRevenue").innerText = money(stats.month.revenue);
+  document.getElementById("statMonthCount").innerText = `${stats.month.count} sale(s)`;
+  document.getElementById("statProductsCustomers").innerText = `${stats.totalProducts} / ${stats.totalCustomers}`;
+  document.getElementById("statLowStock").innerText = stats.lowStockCount;
+
+  const recentBody = document.getElementById("recentSalesBody");
+  recentBody.innerHTML = stats.recentSales.length
+    ? stats.recentSales.map(s => `<tr>
+        <td>${s.invoice_no}</td>
+        <td>${s.customer || "Walk-in"}</td>
+        <td>${money(s.total)}</td>
+        <td>${new Date(s.created_at).toLocaleString()}</td>
+      </tr>`).join("")
+    : emptyStateRow(4, "No sales yet — head to POS to make your first sale", "🛒");
+
+  const feed = document.getElementById("activityFeed");
+  feed.innerHTML = (stats.recentActivity || []).length
+    ? stats.recentActivity.map(a => `
+        <div class="d-flex justify-content-between border-bottom py-2">
+          <span><strong>${a.username || "System"}</strong> ${ACTIVITY_LABELS[a.action] || a.action}${a.details ? ` — ${a.details}` : ''}</span>
+        </div>
+        <div class="text-muted mb-1" style="font-size:.75rem">${new Date(a.created_at).toLocaleString()}</div>
+      `).join("")
+    : `<div class="empty-state py-3"><div class="empty-icon">📋</div>Nothing here yet</div>`;
+
+  new Chart(document.getElementById("revenueChart"), {
+    type: "line",
+    data: {
+      labels: stats.salesLast7Days.map(d => d.date),
+      datasets: [{
+        label: "Revenue",
+        data: stats.salesLast7Days.map(d => d.revenue),
+        borderColor: "#0f6b5c",
+        backgroundColor: "rgba(15,107,92,.1)",
+        fill: true,
+        tension: .3
+      }]
+    },
+    options: { plugins: { legend: { display: false } } }
+  });
+
+  new Chart(document.getElementById("topProductsChart"), {
+    type: "bar",
+    data: {
+      labels: stats.topProducts.map(p => p.name),
+      datasets: [{ label: "Units sold", data: stats.topProducts.map(p => p.units_sold), backgroundColor: "#0f6b5c" }]
+    },
+    options: { indexAxis: "y", plugins: { legend: { display: false } } }
+  });
+}
+
+loadDashboard();
+</script>
+
+</body>
+</html>

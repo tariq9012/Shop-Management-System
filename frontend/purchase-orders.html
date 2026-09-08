@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Purchase Orders — Shop Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/css/style.css" rel="stylesheet">
+</head>
+<body data-page="purchase-orders">
+
+<div id="sidebar"></div>
+<div id="topbar"></div>
+
+<div id="page-content">
+
+  <div class="page-header">
+    <div>
+      <h1>Purchase Orders</h1>
+      <p>Restock inventory from your suppliers.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#poModal" onclick="resetForm()">+ New Purchase Order</button>
+  </div>
+
+  <div class="card-panel">
+    <table class="table align-middle">
+      <thead><tr><th>PO #</th><th>Supplier</th><th>Status</th><th>Total</th><th>Created</th><th>Actions</th></tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create PO Modal -->
+<div class="modal fade" id="poModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">New Purchase Order</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label small">Supplier</label>
+          <select id="supplier_id" class="form-select"></select>
+        </div>
+
+        <div class="row g-2 align-items-end mb-2">
+          <div class="col-4">
+            <label class="form-label small">Product</label>
+            <select id="itemProduct" class="form-select"></select>
+          </div>
+          <div class="col-3">
+            <label class="form-label small">Quantity</label>
+            <input id="itemQty" type="number" min="1" class="form-control" value="1">
+          </div>
+          <div class="col-3">
+            <label class="form-label small">Cost Price</label>
+            <input id="itemCost" type="number" step="0.01" class="form-control">
+          </div>
+          <div class="col-2">
+            <button class="btn btn-outline-primary w-100" onclick="addItem()">Add</button>
+          </div>
+        </div>
+
+        <table class="table table-sm">
+          <thead><tr><th>Product</th><th>Qty</th><th>Cost</th><th>Subtotal</th><th></th></tr></thead>
+          <tbody id="itemList"></tbody>
+        </table>
+        <div class="text-end fw-bold" id="poTotal">Total: Rs 0.00</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="submitPO()">Create Order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+let products = [];
+let poItems = [];
+let modal;
+
+async function loadOptions() {
+  const [suppliers, productsRes] = await Promise.all([getSuppliers(), getProducts({ limit: 200 })]);
+  document.getElementById("supplier_id").innerHTML = suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+  products = productsRes.data || [];
+  document.getElementById("itemProduct").innerHTML = products.map(p => `<option value="${p.id}" data-cost="${p.cost_price}">${p.name}</option>`).join("");
+  updateCostSuggestion();
+}
+
+document.addEventListener("change", e => {
+  if (e.target.id === "itemProduct") updateCostSuggestion();
+});
+
+function updateCostSuggestion() {
+  const select = document.getElementById("itemProduct");
+  const opt = select.options[select.selectedIndex];
+  if (opt) document.getElementById("itemCost").value = opt.dataset.cost || 0;
+}
+
+function addItem() {
+  const productId = parseInt(document.getElementById("itemProduct").value);
+  const product = products.find(p => p.id === productId);
+  const quantity = parseInt(document.getElementById("itemQty").value) || 1;
+  const cost_price = parseFloat(document.getElementById("itemCost").value) || 0;
+  if (!product) return;
+
+  poItems.push({ product_id: product.id, name: product.name, quantity, cost_price });
+  renderItems();
+}
+
+function removeItem(index) {
+  poItems.splice(index, 1);
+  renderItems();
+}
+
+function renderItems() {
+  document.getElementById("itemList").innerHTML = poItems.map((i, idx) => `
+    <tr>
+      <td>${i.name}</td>
+      <td>${i.quantity}</td>
+      <td>${money(i.cost_price)}</td>
+      <td>${money(i.quantity * i.cost_price)}</td>
+      <td><button class="btn btn-sm btn-outline-danger" onclick="removeItem(${idx})">✕</button></td>
+    </tr>`).join("");
+  const total = poItems.reduce((sum, i) => sum + i.quantity * i.cost_price, 0);
+  document.getElementById("poTotal").innerText = `Total: ${money(total)}`;
+}
+
+function resetForm() {
+  poItems = [];
+  renderItems();
+}
+
+async function submitPO() {
+  if (poItems.length === 0) { toast("Add at least one item", "danger"); return; }
+  const payload = {
+    supplier_id: document.getElementById("supplier_id").value,
+    items: poItems.map(({ product_id, quantity, cost_price }) => ({ product_id, quantity, cost_price }))
+  };
+  const res = await addPurchaseOrder(payload);
+  if (res.po_no) {
+    toast(`Purchase order ${res.po_no} created`);
+    modal.hide();
+    resetForm();
+    load();
+  } else {
+    toast(res.msg || "Could not create purchase order", "danger");
+  }
+}
+
+async function load() {
+  showSkeleton("list", 6);
+  const orders = await getPurchaseOrders();
+  document.getElementById("list").innerHTML = orders.length ? orders.map(po => `
+    <tr>
+      <td>${po.po_no}</td>
+      <td>${po.supplier_name || ""}</td>
+      <td><span class="badge ${po.status === 'received' ? 'bg-success' : po.status === 'cancelled' ? 'bg-secondary' : 'bg-warning text-dark'}">${po.status}</span></td>
+      <td>${money(po.total)}</td>
+      <td>${new Date(po.created_at).toLocaleDateString()}</td>
+      <td>
+        ${po.status === 'pending' ? `
+          <button class="btn btn-sm btn-outline-success" data-admin-only onclick="receive(${po.id})">Receive</button>
+          <button class="btn btn-sm btn-outline-danger" data-admin-only onclick="cancel(${po.id})">Cancel</button>
+        ` : ''}
+      </td>
+    </tr>`).join("") : emptyStateRow(6, "No purchase orders yet — restock from a supplier", "🧾");
+  if (!isAdmin()) document.querySelectorAll("[data-admin-only]").forEach(el => el.remove());
+}
+
+async function receive(id) {
+  if (!confirm("Mark as received? This will add stock to your inventory.")) return;
+  const res = await receivePurchaseOrder(id);
+  toast(res.msg || "Received");
+  load();
+}
+
+async function cancel(id) {
+  if (!confirm("Cancel this purchase order?")) return;
+  const res = await cancelPurchaseOrder(id);
+  toast(res.msg || "Cancelled");
+  load();
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  modal = new bootstrap.Modal(document.getElementById("poModal"));
+  await loadOptions();
+  load();
+});
+</script>
+
+</body>
+</html>
