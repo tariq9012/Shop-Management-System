@@ -44,7 +44,9 @@ app.use((req, res, next) => {
 });
 
 // Serve uploaded product images
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const upload = require('./middleware/upload');
+
+app.use('/uploads', express.static(upload.uploadRoot));
 
 // Health checks
 app.get('/', (req, res) => {
