@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const dotenv = require('dotenv');
+
 dotenv.config();
 
 // Import routes
@@ -27,12 +28,18 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Simple request logger (no external dependency needed)
+// Simple request logger
 app.use((req, res, next) => {
   const start = Date.now();
+
   res.on('finish', () => {
-    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} - ${Date.now() - start}ms`);
+    console.log(
+      `${req.method} ${req.originalUrl} ${res.statusCode} - ${
+        Date.now() - start
+      }ms`
+    );
   });
+
   next();
 });
 
@@ -40,14 +47,28 @@ app.use((req, res, next) => {
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Health checks
-app.get('/', (req, res) => res.json({ status: 'Shop Management API is running' }));
+app.get('/', (req, res) => {
+  res.json({
+    status: 'Shop Management API is running',
+  });
+});
+
 app.get('/api/health', async (req, res) => {
   try {
     await db.ping();
-    res.json({ status: 'ok', database: 'connected', provider: 'Neon PostgreSQL' });
+
+    res.json({
+      status: 'ok',
+      database: 'connected',
+      provider: 'Neon PostgreSQL',
+    });
   } catch (err) {
     console.error('Database health check failed:', err.message);
-    res.status(503).json({ status: 'error', database: 'disconnected' });
+
+    res.status(503).json({
+      status: 'error',
+      database: 'disconnected',
+    });
   }
 });
 
@@ -63,10 +84,18 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/users', usersRoutes);
 
-// 404 + centralized error handling (must be last)
+// 404 + centralized error handling
 app.use(notFound);
 app.use(errorHandler);
 
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Export Express app for Vercel.
+// Locally, start HTTP server only when this file is run directly.
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;
