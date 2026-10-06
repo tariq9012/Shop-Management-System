@@ -13,7 +13,7 @@ const getProducts = asyncHandler(async (req, res) => {
   const params = [];
 
   if (search) {
-    where.push('(p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ?)');
+    where.push('(p.name ILIKE ? OR p.sku ILIKE ? OR p.barcode ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (category) {
@@ -243,7 +243,7 @@ const bulkImportProducts = asyncHandler(async (req, res) => {
         created++;
       }
     } catch (err) {
-      errors.push({ row: rowNum, message: err.code === 'ER_DUP_ENTRY' ? 'duplicate SKU or barcode' : err.message });
+      errors.push({ row: rowNum, message: err.code === '23505' ? 'duplicate SKU or barcode' : err.message });
     }
   }
 

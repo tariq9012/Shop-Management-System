@@ -18,6 +18,7 @@ const settingsRoutes = require('./routes/settings');
 const usersRoutes = require('./routes/users');
 
 const { notFound, errorHandler } = require('./middleware/errorHandler');
+const db = require('./config/db');
 
 const app = express();
 
@@ -38,8 +39,17 @@ app.use((req, res, next) => {
 // Serve uploaded product images
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Health check
+// Health checks
 app.get('/', (req, res) => res.json({ status: 'Shop Management API is running' }));
+app.get('/api/health', async (req, res) => {
+  try {
+    await db.ping();
+    res.json({ status: 'ok', database: 'connected', provider: 'Neon PostgreSQL' });
+  } catch (err) {
+    console.error('Database health check failed:', err.message);
+    res.status(503).json({ status: 'error', database: 'disconnected' });
+  }
+});
 
 // Routes
 app.use('/api/auth', authRoutes);

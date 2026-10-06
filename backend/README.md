@@ -57,7 +57,7 @@ activity audit trail, and a dashboard with charts.
 
 ```
 backend/
-  config/db.js             MySQL connection pool
+  config/db.js             PostgreSQL/Neon connection pool + compatibility adapter
   middleware/                auth (JWT + roles), error handling, image upload
   controllers/                one per resource
   routes/                     one per resource, wired to controllers + middleware
@@ -65,7 +65,7 @@ backend/
   utils/logActivity.js      writes to the activity_log table
   uploads/products/         uploaded product images (served at /uploads/...)
   schema.sql                 full DB schema — run this first
-  run-schema.js              applies schema.sql without needing the mysql CLI
+  run-schema.js              applies schema.sql directly to Neon via DATABASE_URL
   index.js                   app entrypoint
 frontend/
   assets/js/api.js          every backend call, in one place
@@ -77,36 +77,37 @@ frontend/
   reports.html, settings.html, users.html, invoice.html (printable)
 ```
 
-## How to run it
+## How to run it with Neon PostgreSQL
+
+1. Create a Neon project and copy its **pooled** PostgreSQL connection string.
+2. Copy `.env.example` to `.env` and set `DATABASE_URL` plus a strong
+   `JWT_SECRET`. Keep `.env` private; it is already ignored by Git.
+3. Install dependencies and apply the schema:
 
 ```bash
 cd backend
 npm install
-node run-schema.js      # applies schema.sql — works even without the mysql CLI tool
+npm run db:schema
 ```
 
-⚠️ `run-schema.js` / `schema.sql` **drop and recreate** the `shop`
-database on every run, so your tables always match what the backend
-expects. Back up first with `mysqldump -u root -p shop > backup.sql` if
-you have real data to keep.
+`schema.sql` is PostgreSQL/Neon compatible and does **not** drop your database.
+It creates missing tables/types/indexes and inserts only the starter settings and
+categories that do not already exist.
 
-If you do have the `mysql` command-line tool available, you can use it
-instead: `mysql -u root -p < schema.sql` (on Windows PowerShell, `<`
-redirection doesn't work the same way it does in `cmd.exe` — that's why
-`node run-schema.js` is the more reliable option there).
-
-Edit `backend/.env` with your real MySQL credentials (copy from
-`.env.example` if you're starting fresh), then:
+Then start the API:
 
 ```bash
 npm start
 ```
 
 The API runs on `http://localhost:5000`. Open `frontend/login.html` in a
-browser (or serve the `frontend` folder with any static server — e.g.
-`npx serve frontend`), register the first account (it becomes admin), and
-log in. Visit **Shop Settings** first to set your shop name, currency and
-default tax rate — everything else picks those up automatically.
+browser (or serve the `frontend` folder with a static server such as
+`npx serve frontend`). On a fresh Neon database, the first registered account
+becomes `admin`; later accounts become `staff`.
+
+For Vercel, add the same pooled Neon connection string as the `DATABASE_URL`
+environment variable in the backend project. Do not put the real connection
+string in GitHub.
 
 ## Notes on scaling this further
 

@@ -5,11 +5,11 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const getStats = asyncHandler(async (req, res) => {
   const [[todaySales]] = await db.query(
     `SELECT COALESCE(SUM(total),0) AS revenue, COUNT(*) AS count
-     FROM sales WHERE DATE(created_at) = CURDATE()`
+     FROM sales WHERE created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + INTERVAL '1 day'`
   );
   const [[monthSales]] = await db.query(
     `SELECT COALESCE(SUM(total),0) AS revenue, COUNT(*) AS count
-     FROM sales WHERE YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())`
+     FROM sales WHERE created_at >= date_trunc('month', CURRENT_DATE) AND created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'`
   );
   const [[products]] = await db.query('SELECT COUNT(*) AS count FROM products');
   const [[customers]] = await db.query('SELECT COUNT(*) AS count FROM customers');
@@ -31,7 +31,7 @@ const getStats = asyncHandler(async (req, res) => {
   const [salesLast7Days] = await db.query(
     `SELECT DATE(created_at) AS date, COALESCE(SUM(total),0) AS revenue
      FROM sales
-     WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+     WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
      GROUP BY DATE(created_at)
      ORDER BY date`
   );

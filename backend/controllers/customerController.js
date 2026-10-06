@@ -7,7 +7,7 @@ const getCustomers = asyncHandler(async (req, res) => {
   const offset = (Math.max(1, parseInt(page)) - 1) * Math.max(1, parseInt(limit));
   const lim = Math.min(100, Math.max(1, parseInt(limit)));
 
-  const where = search ? 'WHERE name LIKE ? OR contact LIKE ? OR email LIKE ?' : '';
+  const where = search ? 'WHERE name ILIKE ? OR contact ILIKE ? OR email ILIKE ?' : '';
   const params = search ? [`%${search}%`, `%${search}%`, `%${search}%`] : [];
 
   const [rows] = await db.query(

@@ -29,7 +29,7 @@ const updateUserStatus = asyncHandler(async (req, res) => {
   if (parseInt(id) === req.user.id) {
     return res.status(400).json({ msg: 'You cannot deactivate your own account' });
   }
-  await db.query('UPDATE users SET is_active = ? WHERE id = ?', [is_active ? 1 : 0, id]);
+  await db.query('UPDATE users SET is_active = ? WHERE id = ?', [Boolean(is_active), id]);
   await logActivity(req.user.id, 'user_status_changed', `User #${id} ${is_active ? 'activated' : 'deactivated'}`);
   res.json({ msg: is_active ? 'User activated' : 'User deactivated' });
 });

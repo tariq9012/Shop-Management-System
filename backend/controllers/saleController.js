@@ -73,7 +73,7 @@ const refundSale = asyncHandler(async (req, res) => {
     // never let someone refund more than was actually sold.
     const [alreadyRefunded] = await conn.query(
       `SELECT sale_item_id, COALESCE(SUM(quantity),0) AS qty
-       FROM refund_items WHERE sale_item_id IN (?) GROUP BY sale_item_id`,
+       FROM refund_items WHERE sale_item_id = ANY(?::int[]) GROUP BY sale_item_id`,
       [saleItems.map(si => si.id).length ? saleItems.map(si => si.id) : [0]]
     );
     const refundedMap = Object.fromEntries(alreadyRefunded.map(r => [r.sale_item_id, r.qty]));

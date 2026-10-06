@@ -13,10 +13,10 @@ function notFound(req, res, next) {
 function errorHandler(err, req, res, next) {
   console.error(err);
 
-  if (err.code === 'ER_DUP_ENTRY') {
+  if (err.code === '23505') {
     return res.status(409).json({ msg: 'That record already exists' });
   }
-  if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.code === 'ER_NO_REFERENCED_ROW') {
+  if (err.code === '23503') {
     return res.status(400).json({ msg: 'Referenced record does not exist' });
   }
 
