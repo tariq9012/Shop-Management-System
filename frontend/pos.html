@@ -118,7 +118,7 @@ function renderProductList() {
   );
   document.getElementById("productList").innerHTML = filtered.length ? filtered.map(p => `
     <tr>
-      <td>${p.image ? `<img src="http://localhost:5000${p.image}" class="product-thumb">` : `<div class="product-thumb"></div>`}</td>
+      <td>${p.image ? `<img src="${API_URL}${p.image}" class="product-thumb">` : `<div class="product-thumb"></div>`}</td>
       <td>${p.name}</td>
       <td>${money(p.price)}</td>
       <td>${p.stock}</td>

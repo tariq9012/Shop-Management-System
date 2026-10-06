@@ -159,7 +159,7 @@ async function load() {
 
   list.innerHTML = res.data.length ? res.data.map(p => `
     <tr>
-      <td>${p.image ? `<img src="http://localhost:5000${p.image}" class="product-thumb">` : `<div class="product-thumb"></div>`}</td>
+      <td>${p.image ? `<img src="${API_URL}${p.image}" class="product-thumb">` : `<div class="product-thumb"></div>`}</td>
       <td>${p.name}</td>
       <td class="text-muted small">${p.sku || ""}${p.barcode ? `<br><span title="Barcode">🔖 ${p.barcode}</span>` : ""}</td>
       <td>${p.category_name || ""}</td>
